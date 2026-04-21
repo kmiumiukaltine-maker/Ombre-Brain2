@@ -995,7 +995,11 @@ document.getElementById('search-input').addEventListener('input', (e) => {
 async function loadBuckets() {
   try {
     const res = await fetch(BASE + '/api/buckets');
-    allBuckets = await res.json();
+    const data = await res.json();
+    if (!res.ok || !Array.isArray(data)) {
+      throw new Error((data && data.error) ? data.error : `HTTP ${res.status}`);
+    }
+    allBuckets = data;
     updateStats();
     buildFilters();
     renderBuckets(allBuckets);

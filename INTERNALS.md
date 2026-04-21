@@ -496,3 +496,92 @@ type: dynamic
 
 桶正文内容...
 ```
+
+---
+
+## 7. Bug 修复记录 (B-01 至 B-10)
+
+### B-01 — `update(resolved=True)` 自动归档 🔴 高
+
+- **文件**: `bucket_manager.py` → `update()`
+- **问题**: `resolved=True` 时立即调用 `_move_bucket(archive_dir)` 将桶移入 `archive/`
+- **修复**: 移除 `_move_bucket` 逻辑；resolved 桶留在 `dynamic/`，由 decay 引擎自然淘汰
+- **影响**: 已解决的桶仍可被关键词检索命中（降权但不消失）
+- **测试**: `tests/regression/test_issue_B01.py`，`tests/integration/test_scenario_07_trace.py`
+
+### B-03 — `int()` 截断浮点 activation_count 🔴 高
+
+- **文件**: `decay_engine.py` → `calculate_score()`
+- **问题**: `max(1, int(activation_count))` 将 `_time_ripple` 写入的 1.3 截断为 1，涟漪加成失效
+- **修复**: 改为 `max(1.0, float(activation_count))`
+- **影响**: 时间涟漪效果现在正确反映在 score 上；高频访问的桶衰减更慢
+- **测试**: `tests/regression/test_issue_B03.py`，`tests/unit/test_calculate_score.py`
+
+### B-04 — `create()` 初始化 activation_count=1 🟠 中
+
+- **文件**: `bucket_manager.py` → `create()`
+- **问题**: `activation_count=1` 导致冷启动检测条件 `== 0` 永不满足，新建重要桶无法浮现
+- **修复**: 改为 `activation_count=0`；`touch()` 首次命中后变 1
+- **测试**: `tests/regression/test_issue_B04.py`，`tests/integration/test_scenario_01_cold_start.py`
+
+### B-05 — 时间衰减系数 0.1 过快 🟠 中
+
+- **文件**: `bucket_manager.py` → `_calc_time_score()`
+- **问题**: `math.exp(-0.1 * days)` 导致 30 天后得分仅剩 ≈0.05，远快于人类记忆曲线
+- **修复**: 改为 `math.exp(-0.02 * days)`（30 天后 ≈0.549）
+- **影响**: 记忆保留时间更符合人类认知模型
+- **测试**: `tests/regression/test_issue_B05.py`，`tests/unit/test_score_components.py`
+
+### B-06 — `w_time` 默认值 2.5 过高 🟠 中
+
+- **文件**: `bucket_manager.py` → `_calc_final_score()`（或评分调用处）
+- **问题**: `scoring.get("time_proximity", 2.5)` — 时间权重过高，近期低质量记忆得分高于高质量旧记忆
+- **修复**: 改为 `scoring.get("time_proximity", 1.5)`
+- **测试**: `tests/regression/test_issue_B06.py`，`tests/unit/test_score_components.py`
+
+### B-07 — `content_weight` 默认值 3.0 过高 🟠 中
+
+- **文件**: `bucket_manager.py` → `_calc_topic_score()`
+- **问题**: `scoring.get("content_weight", 3.0)` — 内容权重远大于名字权重(×3)，导致内容重复堆砌的桶得分高于名字精确匹配的桶
+- **修复**: 改为 `scoring.get("content_weight", 1.0)`
+- **影响**: 名字完全匹配 > 标签匹配 > 内容匹配的得分层级现在正确
+- **测试**: `tests/regression/test_issue_B07.py`，`tests/unit/test_topic_score.py`
+
+### B-08 — `run_decay_cycle()` 同轮 auto_resolve 后 score 未降权 🟡 低
+
+- **文件**: `decay_engine.py` → `run_decay_cycle()`
+- **问题**: `auto_resolve` 标记后立即用旧 `meta`（stale）计算 score，`resolved_factor=0.05` 未生效
+- **修复**: 在 `bucket_mgr.update(resolved=True)` 后立即执行 `meta["resolved"] = True`，确保同轮降权
+- **测试**: `tests/regression/test_issue_B08.py`，`tests/integration/test_scenario_08_decay.py`
+
+### B-09 — `hold()` 用 analyze() 覆盖用户传入的 valence/arousal 🟡 低
+
+- **文件**: `server.py` → `hold()`
+- **问题**: 先调 `analyze()`，再直接用结果覆盖用户传入的情感值，情感准确性丢失
+- **修复**: 使用 `final_valence = user_valence if user_valence is not None else analyze_result.get("valence")`
+- **影响**: 用户明确传入的情感坐标（包括 0.0）不再被 LLM 结果覆盖
+- **测试**: `tests/regression/test_issue_B09.py`，`tests/integration/test_scenario_03_hold.py`
+
+### B-10 — feel 桶 `domain=[]` 被填充为 `["未分类"]` 🟡 低
+
+- **文件**: `bucket_manager.py` → `create()`
+- **问题**: `if not domain: domain = ["未分类"]` 对所有桶类型生效，feel 桶的空 domain 被错误填充
+- **修复**: 改为 `if not domain and bucket_type != "feel": domain = ["未分类"]`
+- **影响**: `breath(domain="feel")` 通道过滤逻辑现在正确（feel 桶 domain 始终为空列表）
+- **测试**: `tests/regression/test_issue_B10.py`，`tests/integration/test_scenario_10_feel.py`
+
+---
+
+### Bug 修复汇总表
+
+| ID | 严重度 | 文件 | 方法 | 一句话描述 |
+|---|---|---|---|---|
+| B-01 | 🔴 高 | `bucket_manager.py` | `update()` | resolved 桶不再自动归档 |
+| B-03 | 🔴 高 | `decay_engine.py` | `calculate_score()` | float activation_count 不被 int() 截断 |
+| B-04 | 🟠 中 | `bucket_manager.py` | `create()` | 初始 activation_count=0 |
+| B-05 | 🟠 中 | `bucket_manager.py` | `_calc_time_score()` | 时间衰减系数 0.02（原 0.1） |
+| B-06 | 🟠 中 | `bucket_manager.py` | 评分权重配置 | w_time 默认 1.5（原 2.5） |
+| B-07 | 🟠 中 | `bucket_manager.py` | `_calc_topic_score()` | content_weight 默认 1.0（原 3.0） |
+| B-08 | 🟡 低 | `decay_engine.py` | `run_decay_cycle()` | auto_resolve 同轮应用 ×0.05 |
+| B-09 | 🟡 低 | `server.py` | `hold()` | 用户 valence/arousal 优先 |
+| B-10 | 🟡 低 | `bucket_manager.py` | `create()` | feel 桶 domain=[] 不被填充 |
