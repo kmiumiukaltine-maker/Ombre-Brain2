@@ -426,6 +426,7 @@ async def _merge_or_create(
     valence: float,
     arousal: float,
     name: str = "",
+    chord_tag: str = "",
 ) -> tuple[str, bool]:
     """
     Check if a similar bucket exists for merging; merge if so, create if not.
@@ -476,6 +477,7 @@ async def _merge_or_create(
         valence=valence,
         arousal=arousal,
         name=name or None,
+        chord_tag=chord_tag,
     )
     # --- Generate embedding for new bucket ---
     try:
@@ -783,10 +785,12 @@ async def hold(
     importance: int = 5,
     pinned: bool = False,
     feel: bool = False,
-    source_bucket: str = "",    valence: float = -1,
+    source_bucket: str = "",
+    valence: float = -1,
     arousal: float = -1,
+    chord_tag: str = "",
 ) -> str:
-    """存储单条记忆,自动打标+合并。tags逗号分隔,importance 1-10。pinned=True创建永久钉选桶。feel=True存储你的第一人称感受(不参与普通浮现)。source_bucket=被消化的记忆桶ID(feel模式下,标记源记忆为已消化)。"""
+    """存储单条记忆,自动打标+合并。tags逗号分隔,importance 1-10。pinned=True创建永久钉选桶。feel=True存储你的第一人称感受(不参与普通浮现)。source_bucket=被消化的记忆桶ID(feel模式下,标记源记忆为已消化)。chord_tag=和弦标记（如"Amaj7→Dmaj7→E→A·72bpm·mp→f"），作为跨窗口情绪坐标。"""
     await decay_engine.ensure_started()
 
     # --- Input validation / 输入校验 ---
@@ -811,6 +815,7 @@ async def hold(
             arousal=feel_arousal,
             name=None,
             bucket_type="feel",
+            chord_tag=chord_tag,
         )
         try:
             await embedding_engine.generate_and_store(bucket_id, content)
@@ -864,6 +869,7 @@ async def hold(
             name=suggested_name or None,
             bucket_type="permanent",
             pinned=True,
+            chord_tag=chord_tag,
         )
         try:
             await embedding_engine.generate_and_store(bucket_id, content)
@@ -880,6 +886,7 @@ async def hold(
         valence=final_valence,
         arousal=final_arousal,
         name=suggested_name,
+        chord_tag=chord_tag,
     )
 
     action = "合并→" if is_merged else "新建→"

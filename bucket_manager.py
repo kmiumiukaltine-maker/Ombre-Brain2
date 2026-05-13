@@ -110,6 +110,7 @@ class BucketManager:
         name: str = None,
         pinned: bool = False,
         protected: bool = False,
+        chord_tag: str = "",
     ) -> str:
         """
         Create a new memory bucket, return bucket ID.
@@ -152,6 +153,8 @@ class BucketManager:
             metadata["pinned"] = True
         if protected:
             metadata["protected"] = True
+        if chord_tag:
+            metadata["chord_tag"] = chord_tag
 
         # --- Assemble Markdown file (frontmatter + body) ---
         # --- 组装 Markdown 文件 ---
