@@ -383,6 +383,9 @@ class Dehydrator:
                     pass
             if metadata.get("digested"):
                 header += " [已消化]"
+            chord_tag = metadata.get("chord_tag")
+            if chord_tag:
+                header += f" [♩:{chord_tag}]"
             header += "\n"
         
         content = re.sub(r'\[\[([^\]]+)\]\]', r'\1', content)
